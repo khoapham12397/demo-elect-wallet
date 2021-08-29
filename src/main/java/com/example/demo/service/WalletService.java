@@ -13,6 +13,7 @@ import com.example.demo.entity.*;
 import com.example.demo.repository.PresentTransactionRepository;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +31,9 @@ import com.example.demo.util.GenerationUtil;
 
 @Service
 public class WalletService {
-	
+	@Autowired
+	RedisTemplate<String, String> redisTemplate;
+
 	@PersistenceContext
 	EntityManager entityManager;
 
@@ -156,14 +159,15 @@ public class WalletService {
 		if(pr.getEnvelope()==0) return -2L;
 		Boolean equal = pr.getEqual();
 		Long am = pr.getTotalAmount()/pr.getEnvelope();
+		System.out.println(am);
 		if (!equal){
 			Random rd = new Random();
 			am = am - 100;
-			am = 100 + rd.nextLong() & Long.MAX_VALUE % (am*2);
+			am = 100 + Math.abs(rd.nextLong()) % (am*2);
+			System.out.println(am);
 			if (am > pr.getCurrentAmount())
 				am = pr.getCurrentAmount();
 		}
-
 		pr.setCurrentAmount(pr.getCurrentAmount()-am);
 		pr.setCurrentEnvelope(pr.getCurrentEnvelope()-1);
 		Wallet wallet = entityManager.find(Wallet.class,rq.getUserId(), LockModeType.PESSIMISTIC_WRITE);
@@ -190,6 +194,7 @@ public class WalletService {
 		if(pr.getCurrentAmount()>0) {
 			Wallet wallet = entityManager.find(Wallet.class, userId,LockModeType.PESSIMISTIC_WRITE);
 			wallet.setBalance(wallet.getBalance() + pr.getCurrentAmount());
+			redisTemplate.opsForHash().increment("wallet:" + userId, "balance", pr.getCurrentAmount());
 		}
 		presentRepository.delete(pr);
 	}

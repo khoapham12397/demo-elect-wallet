@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -67,11 +69,13 @@ public class RestController {
 	
 	@Autowired
 	TopupRepository topupRepository;
-	
-	
+
 	@Autowired
 	P2PRepository p2pRepository;
-	
+
+	@Autowired
+	RedisTemplate<String, String> redisTemplate;
+
 	@GetMapping(value="/get", produces= {MediaType.APPLICATION_JSON_VALUE})
 	public Map<String,Object> getX(){
 		RedisHashCommands<String, Object> com = redisConnection.sync();
@@ -102,6 +106,7 @@ public class RestController {
 		TopupResponse res = new TopupResponse();
 		res.setTimestamp(System.currentTimeMillis());
 		if(txId.substring(0,4).equals("trans")) {
+			redisTemplate.opsForHash().increment("wallet:"+rq.getUserId(), "balance", rq.getAmount());
 			res.setCode(true);
 			res.setMessage("Transaction Successful");
 			res.setTransactionId(txId);
@@ -123,6 +128,7 @@ public class RestController {
 			res.setCode(false);
 			res.setMessage("Your wallet is not exist");
 		}else {
+			redisTemplate.opsForHash().increment("wallet:"+rq.getWalletId(), "balance", rq.getAmount());
 			res.setCode(true);
 			res.setMessage("Transaction Successful");
 			res.setTimestamp(System.currentTimeMillis());
@@ -145,6 +151,8 @@ public class RestController {
 				res.setTimestamp(System.currentTimeMillis());
 				res.setTransactionId(txId);
 				res.setAmount(rq.getAmount());
+				redisTemplate.opsForHash().increment("wallet:"+rq.getSenderId(), "balance", -rq.getAmount());
+				redisTemplate.opsForHash().increment("wallet:"+rq.getReceiverId(), "balance", rq.getAmount());
 			}
 			else{
 				res.setMessage("Transaction failed");
@@ -164,6 +172,7 @@ public class RestController {
 	public CreatePresentResponse createPresent(@RequestBody SendPresentRequest rq){
 		CreatePresentResponse act =new CreatePresentResponse();
 	 	if(walletService.createPresent(rq)) {
+			redisTemplate.opsForHash().increment("wallet:"+rq.getUserId(), "balance", -rq.getAmount());
 	 		act.setCode(true);
 			act.setMessage("Successful");
 	 	}else {
@@ -180,6 +189,7 @@ public class RestController {
 		GetPresentResponse res = new GetPresentResponse();
 		Long amount = walletService.getPresent(rq);
 		if(amount>0) {
+			redisTemplate.opsForHash().increment("wallet:"+rq.getUserId(), "balance", amount);
 			res.setCode(true);
 			res.setMessage("Transaction successful");
 			res.setAmount(amount);
@@ -195,15 +205,15 @@ public class RestController {
 	public GetBalanceResponse getPBalance(@RequestBody GetBalanceRequest rq){
 		GetBalanceResponse res= new GetBalanceResponse();
 		try {
-		Long bal = userService.getBalance(rq.getUserId());
-		
-			res.setBalance(bal);
+			Map<Object, Object> map = redisTemplate.opsForHash().entries("wallet:"+rq.getUserId());
+			res.setBalance(Long.parseLong(map.get("balance").toString()));
 			res.setCode(true); res.setMessage("Successful");
 		}catch(RuntimeException exp) {
 			res.setCode(false); res.setMessage(exp.getMessage());
 		}
 		return res;
 	}
+
 	@PostMapping(value="/removePresent", produces= {MediaType.APPLICATION_JSON_VALUE})
 	public ActionResponse returnPresent(@RequestBody RemovePresentRequest rq){
 		
@@ -242,15 +252,12 @@ public class RestController {
 	public ActionResponse registerUser(@RequestBody RegisterUserRequest rq) {
 		ActionResponse res = new ActionResponse();
 		System.out.println(rq.getUserId());
-	
 		userService.registerUser(rq);
 		res.setCode(true); res.setMessage("Register Wallet Successful");
 		return res;
-		
 	}
 	@PostMapping(value="/changePin", produces= {MediaType.APPLICATION_JSON_VALUE})
 	public ActionResponse changePin(@RequestBody ChangePinRequest rq) {
-		
 		ActionResponse res = new ActionResponse();
 		if(userService.changePin(rq)) {
 			res.setCode(true);

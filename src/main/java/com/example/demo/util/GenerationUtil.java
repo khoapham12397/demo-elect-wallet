@@ -13,22 +13,21 @@ import java.util.UUID;
 
 @Component("GenerationUtil")
 public final class GenerationUtil {
-//	@Autowired
-//	private StatefulRedisConnection autowiredRedis;
-//	private static StatefulRedisConnection redis;
-//	@PostConstruct
-//	private void init() {redis = this.autowiredRedis;}
 	public static String generateId() {
 		return UUID.randomUUID().toString();
 	}
+	@Autowired
+	private RedisTemplate<String, Integer> redisTemplateAutowired;
 	private static RedisTemplate<String, Integer> redisTemplate;
+	@PostConstruct
+	private void init() {redisTemplate = this.redisTemplateAutowired;}
 	public static String generateId(String s){
 		//RedisCommands<String, String> com = redis.sync();
 		String date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyMMdd"));
 		String key = s +"_" + date;
 		//com.incr(key);
+		Integer num = redisTemplate.opsForValue().get(key) + 1;
 		redisTemplate.opsForValue().increment(key);
-		Integer num = redisTemplate.opsForValue().get(key);
 		return date + "-" + String.format("%08d",num);
 	}
 }
